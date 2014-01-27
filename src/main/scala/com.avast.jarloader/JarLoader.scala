@@ -7,11 +7,11 @@ import org.slf4j.{LoggerFactory, Logger}
 import java.net.{URI, JarURLConnection, URL}
 import java.util.jar.Attributes
 import java.nio.file._
-import org.xeustechnologies.jcl.JarClassLoader
-import com.avast.cloudutils.jmx.{JMXProperty, MyDynamicBean, JMXOperation}
+import org.xeustechnologies.jcl.{JclObjectFactory, JarClassLoader}
 import java.util.concurrent.atomic.AtomicReference
 import scala.Some
 import java.nio.file.FileSystem
+import com.avast.jmx.{JMXOperation, MyDynamicBean, JMXProperty}
 
 /**
  * Created <b>1.11.13</b><br>
@@ -30,7 +30,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
   protected var prefix: Option[String] = None
   protected var suffix: Option[String] = None
-  protected var comparator: Option[Comparator[File]] = Some(new TimeFileComparator)
+  protected var comparator: Option[Comparator[File]] = Some(new AlphaFileComparator)
 
   protected var loadedClass: AtomicReference[Option[(T, Int)]] = new AtomicReference[Option[(T, Int)]](None)
 
@@ -181,11 +181,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     }
     else ""
 
-    val url = new URL("jar:file:" + file.getAbsolutePath + "!/")
-    val jcl = new JarClassLoader()
-    jcl.add(file.getName)
-
-    val uc = url.openConnection().asInstanceOf[JarURLConnection]
+    val uc = new URL("jar:file:" + file.getAbsolutePath + "!/").openConnection().asInstanceOf[JarURLConnection]
     val attr = uc.getMainAttributes
 
     val className = attr.get(Attributes.Name.MAIN_CLASS).asInstanceOf[String]
@@ -221,7 +217,10 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     val name: String = file.getName.toLowerCase
     val properties = loadProperties(jarFs.getPath("/" + name.substring(0, name.lastIndexOf(".")) + ".properties"))
 
-    val plugin = jcl.loadClass(className).newInstance().asInstanceOf[T] //create instance
+    val jcl = new JarClassLoader()
+    jcl.add(uc.getJarFileURL)
+
+    val plugin = JclObjectFactory.getInstance().create(jcl, className).asInstanceOf[T] //create instance
 
     Some(version, className, plugin, jarFs, properties)
   }
@@ -246,9 +245,9 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     timerTask != null
   }
 
-  @JMXProperty(name = "loadedFunction")
-  def getLoadedFunctionClassName = {
-    if (loadedClass.get.isDefined) loadedClass.get.getClass.getName else null
+  @JMXProperty(name = "loadedClassName")
+  def getLoadedClassName = {
+    if (loadedClass.get.isDefined) loadedClass.get.get._1.getClass.getName else null
   }
 
   def init(defaultClass: T, defaultVersion: Option[Int]) {
