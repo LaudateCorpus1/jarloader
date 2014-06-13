@@ -145,11 +145,6 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
         case e: Throwable => LOGGER.warn("BeforeUnload annotated method has thrown an exception", e)
       }
 
-      loadedClass.set(Some(result.get._3, result.get._1))
-
-      LOGGER.info("Loaded class '" + result.get._3.getClass.getSimpleName + "', version " + result.get._1)
-      history.add(System.currentTimeMillis() / 1000 + ";" + result.get._2 + ";" + result.get._1 + ";" + jarFile.getAbsolutePath)
-
       var fileSystem: FileSystem = null
       try {
         fileSystem = result.get._4
@@ -161,6 +156,10 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
         if (fileSystem != null) fileSystem.close()
       }
 
+      loadedClass.set(Some(result.get._3, result.get._1))
+
+      LOGGER.info("Loaded class '" + result.get._3.getClass.getSimpleName + "', version " + result.get._1)
+      history.add(System.currentTimeMillis() / 1000 + ";" + result.get._2 + ";" + result.get._1 + ";" + jarFile.getAbsolutePath)
       //keep the memory clean
       while (history.size() > 100) {
         history.remove(0)
@@ -284,7 +283,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
   }
 
   /**
-   * Callback invoked after some JAR has been loaded.
+   * Callback invoked after some JAR has been loaded, but before switch of classes reference.
    * @param instance Loaded instance.
    * @param version Version of loaded JAR.
    * @param className Name (fully classified) of loaded class.

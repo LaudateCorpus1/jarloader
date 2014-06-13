@@ -10,7 +10,7 @@
     <name>JAR loader</name>
 
     <description>Library for dynamic loading of JARs with miscellaneous content.</description>
-    <url>https://github.com/avast/jmx-publisher/wiki</url>
+    <url>https://github.com/avast/jarloader/wiki</url>
     <licenses>
         <license>
             <name>The Apache Software License, Version 2.0</name>
@@ -50,7 +50,7 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
-            <version>1.7.2</version>
+            <version>1.7.6</version>
         </dependency>
 
         <dependency>
@@ -62,7 +62,7 @@
         <dependency>
             <groupId>com.avast</groupId>
             <artifactId>jmx-publisher</artifactId>
-            <version>1.0.0-SNAPSHOT</version>
+            <version>1.0.1</version>
         </dependency>
     </dependencies>
 
