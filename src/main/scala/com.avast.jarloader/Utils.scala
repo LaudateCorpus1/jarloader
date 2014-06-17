@@ -51,6 +51,24 @@ object Utils {
       case e: FileNotFoundException => null
     }
   }
+
+  def compareVersions(oldVersion: String, newVersion: String): Int = {
+
+    val oldParts = oldVersion.split("\\.")
+    val newParts = newVersion.split("\\.")
+
+    val partsCount = math.min(oldParts.length, newParts.length)
+
+    for (i <- 0 to partsCount - 1) {
+      val c = oldParts(i).compareTo(newParts(i))
+      if (c != 0) return c
+    }
+
+    if (oldParts.length > newParts.length)1
+    else if (oldParts.length < newParts.length) -1
+    else
+      0 //equals
+  }
 }
 
 class PropertiesLoader(is: InputStream) {

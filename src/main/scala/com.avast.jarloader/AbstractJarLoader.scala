@@ -24,7 +24,7 @@ trait AbstractJarLoader[T] {
    * @param defaultClass The default class.
    * @param defaultVersion The default version.
    */
-  def init(defaultClass: T, defaultVersion: Option[Int])
+  def init(defaultClass: T, defaultVersion: Option[String])
 
   /**
    * Stops searching for new JARs.
@@ -71,7 +71,7 @@ trait AbstractJarLoader[T] {
    *
    * @return The version.
    */
-  def getLoadedVersion: Int
+  def getLoadedVersion: String
 
   /**
    * Gets currently loaded class (instance).

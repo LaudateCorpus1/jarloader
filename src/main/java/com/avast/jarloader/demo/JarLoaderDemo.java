@@ -16,7 +16,7 @@ import java.util.Map;
 public class JarLoaderDemo {
     IJarLoader<IDemoFunction> loader = new JarLoader<IDemoFunction>("Demo loader", new File("/root/functions")) {
         @Override
-        public void onLoad(IDemoFunction instance, int version, String className, FileSystem fs, Map<String, String> attributes) {
+        public void onLoad(IDemoFunction instance, String version, String className, FileSystem fs, Map<String, String> attributes) {
             System.out.println("New function loaded, class " + className + ", version " + version);
         }
     };

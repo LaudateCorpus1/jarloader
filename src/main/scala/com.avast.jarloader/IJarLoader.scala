@@ -21,6 +21,8 @@ trait IJarLoader[T] {
 
   def init(defaultInstance: T, defaultVersion: Int): Unit
 
+  def init(defaultInstance: T, defaultVersion: String): Unit
+
   def stopSearching(): Unit
 
   def setComparator(comparator: Comparator[File]): Unit
@@ -33,7 +35,7 @@ trait IJarLoader[T] {
 
   def isSearching: Boolean
 
-  def getLoadedVersion: Int
+  def getLoadedVersion: String
 
   def getLoadedClass: T
 }

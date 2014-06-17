@@ -1,17 +1,16 @@
 package com.avast.jarloader
 
-import java.util.{Comparator, TimerTask, Timer}
 import java.io._
-import java.util
-import org.slf4j.{LoggerFactory, Logger}
-import java.net.{URI, JarURLConnection, URL}
-import java.util.jar.Attributes
+import java.net.{JarURLConnection, URI, URL}
 import java.nio.file._
-import org.xeustechnologies.jcl.{JclObjectFactory, JarClassLoader}
+import java.util
 import java.util.concurrent.atomic.AtomicReference
-import scala.Some
-import java.nio.file.FileSystem
-import com.avast.jmx.{JMXOperation, MyDynamicBean, JMXProperty}
+import java.util.jar.Attributes
+import java.util.{Comparator, Timer, TimerTask}
+
+import com.avast.jmx.{JMXOperation, JMXProperty, MyDynamicBean}
+import org.slf4j.{Logger, LoggerFactory}
+import org.xeustechnologies.jcl.{JarClassLoader, JclObjectFactory}
 
 /**
  * Created <b>1.11.13</b><br>
@@ -20,7 +19,7 @@ import com.avast.jmx.{JMXOperation, MyDynamicBean, JMXProperty}
  * @author Jenda Kolena, kolena@avast.com
  * @version 1.1
  */
-abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVersion: Option[Int], maxVersion: Option[Int] = None) extends IJarLoader[T] with AbstractJarLoader[T] {
+abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVersion: Option[String], maxVersion: Option[String] = None) extends IJarLoader[T] with AbstractJarLoader[T] {
   protected val LOGGER: Logger = LoggerFactory.getLogger(getClass)
 
   if (!rootDir.exists()) throw new FileNotFoundException("Cannot find requested directory '%s'".format(rootDir.getAbsolutePath))
@@ -32,10 +31,10 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
   protected var suffix: Option[String] = None
   protected var comparator: Option[Comparator[File]] = Some(new AlphaFileComparator)
 
-  protected var loadedClass: AtomicReference[Option[(T, Int)]] = new AtomicReference[Option[(T, Int)]](None)
+  protected var loadedClass: AtomicReference[Option[(T, String)]] = new AtomicReference[Option[(T, String)]](None)
 
   @JMXProperty
-  protected def loadedVersion = if (loadedClass.get().isDefined) loadedClass.get.get._2 else 0
+  protected def loadedVersion = if (loadedClass.get().isDefined) loadedClass.get.get._2 else 0.toString
 
   protected var acceptOnlyNewerVersions = true
 
@@ -54,7 +53,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
    * @param maxVersion Maximal version of class which will be loaded.
    */
   def this(name: String, rootDir: File, minVersion: java.lang.Integer, maxVersion: java.lang.Integer = -1.asInstanceOf[java.lang.Integer]) = {
-    this(if (!"".equals(name)) Some(name) else None, rootDir, if (minVersion.compareTo(-1.asInstanceOf[java.lang.Integer]) > 1) Some(minVersion.asInstanceOf[Int]) else None, if (maxVersion.compareTo(-1.asInstanceOf[java.lang.Integer]) > 1) Some(maxVersion.asInstanceOf[Int]) else None)
+    this(if (!"".equals(name)) Some(name) else None, rootDir, if (minVersion.compareTo(-1.asInstanceOf[java.lang.Integer]) > 1) Some(minVersion.toString) else None, if (maxVersion.compareTo(-1.asInstanceOf[java.lang.Integer]) > 1) Some(maxVersion.toString) else None)
   }
 
   /**
@@ -145,7 +144,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
         case e: Throwable => LOGGER.warn("BeforeUnload annotated method has thrown an exception", e)
       }
 
-      var fileSystem: FileSystem = null
+      var fileSystem: java.nio.file.FileSystem = null
       try {
         fileSystem = result.get._4
         onLoad(result.get._3, result.get._1, result.get._2, fileSystem, if (result.get._5.isDefined) result.get._5.get else new util.HashMap[String, String]())
@@ -173,7 +172,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     }
   }
 
-  protected def checkJar(file: File): Option[(Int, String, T, FileSystem, Option[util.Map[String, String]])] = {
+  protected def checkJar(file: File): Option[(String, String, T, java.nio.file.FileSystem, Option[util.Map[String, String]])] = {
     val classPackage = if (loadedClass.get.isDefined) {
       val n = loadedClass.get.get._1.getClass.getName
       n.substring(0, n.lastIndexOf("."))
@@ -184,18 +183,18 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     val attr = uc.getMainAttributes
 
     val className = attr.get(Attributes.Name.MAIN_CLASS).asInstanceOf[String]
-    val version = java.lang.Integer.parseInt(attr.get(Attributes.Name.IMPLEMENTATION_VERSION).asInstanceOf[String])
+    val version = attr.get(Attributes.Name.IMPLEMENTATION_VERSION).asInstanceOf[String]
 
-    if (version <= loadedVersion && acceptOnlyNewerVersions) {
-      LOGGER.debug("Too old version: {} (loaded: {}, required newer)", version, loadedVersion)
+    if (Utils.compareVersions(loadedVersion, version) >= 0 && acceptOnlyNewerVersions) {
+      LOGGER.debug("Too old version: %s (loaded: %s, required newer)".format(version, loadedVersion))
       return None
     }
-    if (minVersion.isDefined && minVersion.get > version) {
-      LOGGER.debug("Too small version: {} (required: {})", version, minVersion.get)
+    if (minVersion.isDefined && Utils.compareVersions(minVersion.get, version) < 0) {
+      LOGGER.debug("Too small version: %s (required: %s)".format(version, minVersion.get))
       return None
     }
-    if (maxVersion.isDefined && maxVersion.get < version) {
-      LOGGER.debug("Too big version: {} (required: {})", version, maxVersion.get)
+    if (maxVersion.isDefined && Utils.compareVersions(maxVersion.get, version) < 0) {
+      LOGGER.debug("Too big version: %s (required: %s)".format(version, maxVersion.get))
       return None
     }
 
@@ -249,8 +248,8 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     if (loadedClass.get.isDefined) loadedClass.get.get._1.getClass.getName else null
   }
 
-  def init(defaultClass: T, defaultVersion: Option[Int]) {
-    loadedClass.set(Some(defaultClass, if (defaultVersion.isDefined) defaultVersion.get else 0))
+  def init(defaultClass: T, defaultVersion: Option[String]) {
+    loadedClass.set(Some(defaultClass, if (defaultVersion.isDefined) defaultVersion.get else 0.toString))
   }
 
   def acceptOnlyNewer(accept: Boolean) = {
@@ -261,7 +260,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     acceptOnlyNewer(accept = false)
   }
 
-  def getLoadedVersion: Int = loadedVersion
+  def getLoadedVersion: String = loadedVersion
 
   def getLoadedClass: T = if (loadedClass.get.isDefined) loadedClass.get.get._1 else null.asInstanceOf[T]
 
@@ -290,7 +289,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
    * @param fs Filesystem of the JAR.
    * @param attributes Attributes loaded from properties file.
    */
-  protected def onLoad(instance: T, version: Int, className: String, fs: FileSystem, attributes: util.Map[String, String])
+  protected def onLoad(instance: T, version: String, className: String, fs: java.nio.file.FileSystem, attributes: util.Map[String, String])
 
   /* -- java interface methods -- */
 
@@ -308,6 +307,10 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
   }
 
   def init(defaultInstance: T, defaultVersion: Int) = {
+    init(defaultInstance, Some(defaultVersion.toString))
+  }
+
+  def init(defaultInstance: T, defaultVersion: String) = {
     init(defaultInstance, Some(defaultVersion))
   }
 
