@@ -38,6 +38,10 @@
         <tag>HEAD</tag>
     </scm>
 
+    <properties>
+        <gpg.keyname>FF4DDEC0</gpg.keyname>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.xeustechnologies</groupId>
