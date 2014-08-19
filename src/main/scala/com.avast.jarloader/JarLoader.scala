@@ -10,7 +10,7 @@ import java.util.{Comparator, Timer, TimerTask}
 
 import com.avast.jmx.{JMXOperation, JMXProperty, MyDynamicBean}
 import org.slf4j.{Logger, LoggerFactory}
-import org.xeustechnologies.jcl.{JarClassLoader, JclObjectFactory}
+import org.xeustechnologies.jcl.JclObjectFactory
 
 /**
  * Created <b>1.11.13</b><br>
@@ -109,7 +109,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     this.comparator = if (comparator != null) Some(comparator) else None
   }
 
-  @JMXOperation(description = "Tries to load new JAR with given name.")
+  @JMXOperation(description = "Tries to load new JAR with given name (without JAR extension).")
   def load(name: String): Boolean = {
     try {
       val jarFile = new File(Utils.normalizePath(rootDir.getAbsolutePath + File.separator + name + ".jar"))
@@ -124,8 +124,12 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
       if (!result.isDefined) return false
 
       try {
-        result.get._3.getClass.getDeclaredMethods.foreach(m => {
-          if (m.isAnnotationPresent(classOf[BeforeLoad])) m.invoke(result.get._3)
+        val inst: T = result.get._3
+
+        inst.getClass.getDeclaredMethods.filter(m => {
+          m.isAnnotationPresent(classOf[BeforeLoad])
+        }).foreach(m => {
+          m.invoke(inst)
         })
       }
       catch {
@@ -134,9 +138,12 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
       try {
         if (loadedClass.get.isDefined) {
-          val loaded = loadedClass.get().get._1
-          loaded.getClass.getDeclaredMethods.foreach(m => {
-            if (m.isAnnotationPresent(classOf[BeforeUnload])) m.invoke(loaded)
+          val inst: T = loadedClass.get().get._1
+
+          inst.getClass.getDeclaredMethods.filter(m => {
+            m.isAnnotationPresent(classOf[BeforeUnload])
+          }).foreach(m => {
+            m.invoke(inst)
           })
         }
       }
@@ -150,7 +157,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
         onLoad(result.get._3, result.get._1, result.get._2, fileSystem, if (result.get._5.isDefined) result.get._5.get else new util.HashMap[String, String]())
       }
       catch {
-        case e: Exception => LOGGER.warn("Exception while doing onLoad callback", e)
+        case e: Throwable => LOGGER.warn("Exception while doing onLoad callback", e)
       } finally {
         if (fileSystem != null) fileSystem.close()
       }
@@ -169,6 +176,9 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
       case e: Exception =>
         LOGGER.warn("JAR loading failed", e)
         false
+      case e: Throwable =>
+        LOGGER.error("JAR loading failed", e)
+        throw e
     }
   }
 
@@ -182,8 +192,8 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     val uc = new URL("jar:file:" + file.getAbsolutePath + "!/").openConnection().asInstanceOf[JarURLConnection]
     val attr = uc.getMainAttributes
 
-    val className = attr.get(Attributes.Name.MAIN_CLASS).asInstanceOf[String]
-    val version = attr.get(Attributes.Name.IMPLEMENTATION_VERSION).asInstanceOf[String]
+    val className = attr.getValue(Attributes.Name.MAIN_CLASS)
+    val version = attr.getValue(Attributes.Name.IMPLEMENTATION_VERSION)
 
     if (Utils.compareVersions(loadedVersion, version) >= 0 && acceptOnlyNewerVersions) {
       LOGGER.debug("Too old version: %s (loaded: %s, required newer)".format(version, loadedVersion))
@@ -215,10 +225,9 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     val name: String = file.getName.toLowerCase
     val properties = loadProperties(jarFs.getPath("/" + name.substring(0, name.lastIndexOf(".")) + ".properties"))
 
-    val jcl = new JarClassLoader()
-    jcl.add(uc.getJarFileURL)
+    val jcl = new InJarClassLoader(uc)
 
-    val plugin = JclObjectFactory.getInstance().create(jcl, className).asInstanceOf[T] //create instance
+    val plugin = JclObjectFactory.getInstance().create(jcl.getLoader, className).asInstanceOf[T] //create instance
 
     Some(version, className, plugin, jarFs, properties)
   }
