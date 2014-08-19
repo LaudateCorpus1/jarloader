@@ -21,7 +21,7 @@ class AlphaFileComparator extends Comparator[File] {
 
     val c = name1Short.compareTo(name2Short)
 
-    if (c != 0) c * -1
+    if (c != 0) c
     else if (name1.length > name2.length) -1 else 1
   }
 }
