@@ -56,25 +56,30 @@ class InJarClassLoader(jar: JarURLConnection) {
     protected def decoratePackage(pkg: Package) {
       if (pkg == null) return
 
-      var f = pkg.getClass.getDeclaredField("implVersion")
-      f.setAccessible(true)
-      f.set(pkg, version)
-      f.setAccessible(false)
+      try {
+        var f = pkg.getClass.getDeclaredField("implVersion")
+        f.setAccessible(true)
+        f.set(pkg, version)
+        f.setAccessible(false)
 
-      f = pkg.getClass.getDeclaredField("implVendor")
-      f.setAccessible(true)
-      f.set(pkg, getManifest.getMainAttributes.getValue(Attributes.Name.IMPLEMENTATION_VENDOR))
-      f.setAccessible(false)
+        f = pkg.getClass.getDeclaredField("implVendor")
+        f.setAccessible(true)
+        f.set(pkg, getManifest.getMainAttributes.getValue(Attributes.Name.IMPLEMENTATION_VENDOR))
+        f.setAccessible(false)
 
-      f = pkg.getClass.getDeclaredField("implTitle")
-      f.setAccessible(true)
-      f.set(pkg, getManifest.getMainAttributes.getValue(Attributes.Name.IMPLEMENTATION_TITLE))
-      f.setAccessible(false)
+        f = pkg.getClass.getDeclaredField("implTitle")
+        f.setAccessible(true)
+        f.set(pkg, getManifest.getMainAttributes.getValue(Attributes.Name.IMPLEMENTATION_TITLE))
+        f.setAccessible(false)
 
-      f = pkg.getClass.getDeclaredField("loader")
-      f.setAccessible(true)
-      f.set(pkg, this)
-      f.setAccessible(false)
+        f = pkg.getClass.getDeclaredField("loader")
+        f.setAccessible(true)
+        f.set(pkg, this)
+        f.setAccessible(false)
+      }
+      catch {
+        case e: Exception => LOG.warn("Cannot decorate package info for " + pkg.getName, e)
+      }
     }
 
     override def getPackages: Array[Package] = {
