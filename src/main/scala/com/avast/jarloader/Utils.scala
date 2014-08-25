@@ -1,13 +1,11 @@
 package com.avast.jarloader
 
 import java.io._
-import java.nio.file.Files
-import java.nio.file.Path
-import java.nio.file.Paths
+import java.nio.file.{Files, Path, Paths}
+import java.util
 import java.util.Properties
 import java.util.regex.Matcher
-import scala.reflect.BeanProperty
-import java.util
+
 import scala.collection.JavaConversions._
 
 object Utils {
@@ -52,22 +50,26 @@ object Utils {
     }
   }
 
+  protected val versionComparator = new AlphaComparator
+
   def compareVersions(oldVersion: String, newVersion: String): Int = {
 
-    val oldParts = oldVersion.split("\\.")
-    val newParts = newVersion.split("\\.")
+    //    val oldParts = oldVersion.split("\\.")
+    //    val newParts = newVersion.split("\\.")
+    //
+    //    val partsCount = math.min(oldParts.length, newParts.length)
+    //
+    //    for (i <- 0 to partsCount - 1) {
+    //      val c = oldParts(i).compareTo(newParts(i))
+    //      if (c != 0) return c
+    //    }
+    //
+    //    if (oldParts.length > newParts.length)1
+    //    else if (oldParts.length < newParts.length) -1
+    //    else
+    //      0 //equals
 
-    val partsCount = math.min(oldParts.length, newParts.length)
-
-    for (i <- 0 to partsCount - 1) {
-      val c = oldParts(i).compareTo(newParts(i))
-      if (c != 0) return c
-    }
-
-    if (oldParts.length > newParts.length)1
-    else if (oldParts.length < newParts.length) -1
-    else
-      0 //equals
+    versionComparator.compare(oldVersion, newVersion) * -1
   }
 }
 

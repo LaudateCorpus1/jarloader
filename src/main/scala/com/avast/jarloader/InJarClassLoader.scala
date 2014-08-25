@@ -96,4 +96,5 @@ class InJarClassLoader(jar: JarURLConnection) {
       super.definePackage(name, specTitle, specVersion, specVendor, getManifest.getMainAttributes.getValue(Attributes.Name.IMPLEMENTATION_TITLE), version, getManifest.getMainAttributes.getValue(Attributes.Name.IMPLEMENTATION_VENDOR), sealBase)
     }
   }
+
 }
