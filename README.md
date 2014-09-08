@@ -3,8 +3,8 @@ JAR loader
 
 This library servers for dynamic loading of JARs with miscellaneous content. Typical usage is in project with time-various decision making function. In order to not recompile and restart the service each time this function is changed, the new function implementation can be loaded from separate JAR via this library.
 
-The library is implemented in Scala, but is prepared for usage both in Scala and Java - the main class `JarLoader` implements `AbstractJarLoader` Scala trait and `IJarLoader` Java interface at the same time and it's up to you which he will use. Methods in both interfaces are equal, but the Scala trait uses some `Option` parameters, instead of Java overloading.
-The very basic usage is shown in src/main/java/com/avast/jarloader/demo under the project root:
+The library is implemented in Scala, but is prepared for usage both in Scala and Java - the main class `JarLoader` implements `AbstractJarLoader` Scala trait and `IJarLoader` Java interface at the same time and it's up to you which you will use. Methods in both interfaces are equal, but the Scala trait uses some `Option` parameters, instead of Java overloading.
+This is very basic usage:
 
 		public class JarLoaderDemo {
 			IJarLoader<IDemoFunction> loader = new JarLoader<IDemoFunction>("Demo loader", new File("/root/functions")) {
@@ -43,5 +43,5 @@ The demo above shows the very basic usage. On the other hand, you can specify pr
 It is expected in the given root dir will be multiple JARs with functions implementation. While loading a new one, all files (satisfying given prefix and suffix, if set) are sorted by comparator and the first one is loaded. The default comparator is `TimeFileComparator` (descending, so the winner is the newest file - mTime is used), but you can use also `AplhaFileComparator` (descending too, alphabetically sorted last file wins) or any other comparator, implementing `Comparator<File>` interface.
 
 # Runtime configuration
-The loader is exposed to JMX view, if possible. You can see currently loaded class and its version, history of loaded implementations (last 100). Available operations is `saveHistoryToCsv`,`search` and `stopSearching`.
+The loader is exposed to JMX view, if possible. You can see currently loaded class and its version, history of loaded implementations (last 100). Available operations are `load`, `saveHistoryToCsv`,`search` and `stopSearching`.
 The loaders JMX name is `JarLoader[{nameGivenInConstructor}]`, or `JarLoader[{currentMillis}]` if no name is provided. All loaders are placed (in JMX) in the same package as the class which owns (or extends) it.

@@ -4,6 +4,7 @@ import java.io._
 import java.net.{JarURLConnection, URI, URL}
 import java.nio.file._
 import java.util
+import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicReference
 import java.util.jar.Attributes
 import java.util.{Comparator, Timer, TimerTask}
@@ -17,7 +18,6 @@ import org.xeustechnologies.jcl.JclObjectFactory
  * See <a href="https://intranet.int.avast.com/wiki/ff/projects/jar-loader/wiki">wiki</a> for docs.
  *
  * @author Jenda Kolena, kolena@avast.com
- * @version 1.1
  */
 abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVersion: Option[String], maxVersion: Option[String] = None) extends IJarLoader[T] with AbstractJarLoader[T] {
   protected val LOGGER: Logger = LoggerFactory.getLogger(getClass)
@@ -30,6 +30,8 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
   protected var prefix: Option[String] = None
   protected var suffix: Option[String] = None
   protected var comparator: Option[Comparator[File]] = Some(new AlphaFileComparator)
+
+  protected val loadingLock = new Semaphore(1)
 
   protected var loadedClass: AtomicReference[Option[(T, String)]] = new AtomicReference[Option[(T, String)]](None)
 
@@ -73,6 +75,8 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
     timerTask = new TimerTask {
       def run() {
+        if (!loadingLock.tryAcquire()) return; //already loading something
+
         try {
           val files: Array[File] = rootDir.listFiles(new FilenameFilter {
             def accept(dir: File, name: String): Boolean = {
@@ -87,12 +91,17 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
           var name: String = files(0).getName
           name = name.substring(0, name.lastIndexOf("."))
+
+          LOGGER.debug("Found %s suitable files, %s chosen".format(files.length, name))
+
           load(name)
         }
         catch {
           case e: Exception =>
             LOGGER.error("JAR loading failed", e)
         }
+
+        loadingLock.release()
       }
     }
 
@@ -266,7 +275,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
   }
 
   def acceptOnlyNewer() {
-    acceptOnlyNewer(accept = false)
+    acceptOnlyNewer(accept = true)
   }
 
   def getLoadedVersion: String = loadedVersion
