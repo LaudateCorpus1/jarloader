@@ -311,11 +311,12 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
   /* -- java interface methods -- */
 
-  @JMXOperation(description = "Starts search with given interval, suffix and prefix.")
+  @JMXOperation(description = "Starts search with given interval [ms], suffix and prefix.")
   def search(timeout: Int, prefix: String, suffix: String) = {
     search(timeout, Some(prefix), Some(suffix))
   }
 
+  @JMXOperation(description = "Starts search with given interval [ms] and suffix.")
   def search(timeout: Int, prefix: String) = {
     search(timeout, Some(prefix), None)
   }
