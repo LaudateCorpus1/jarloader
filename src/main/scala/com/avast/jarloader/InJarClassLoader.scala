@@ -1,11 +1,12 @@
 package com.avast.jarloader
 
+import java.lang.reflect.Field
 import java.net.{JarURLConnection, URL}
 import java.util
 import java.util.jar.{Attributes, Manifest}
 
 import org.slf4j.LoggerFactory
-import org.xeustechnologies.jcl.JarClassLoader
+import org.xeustechnologies.jcl.{ClasspathResources, JarClassLoader}
 
 import scala.collection.JavaConversions._
 
@@ -36,6 +37,23 @@ class InJarClassLoader(jar: JarURLConnection) {
   })
 
   LOG.debug("Loaded " + packages.size() + " packages")
+
+  def release() = {
+    val f = loader.getClass.getSuperclass.getDeclaredField("classes")
+    f.setAccessible(true)
+    var map = f.get(loader).asInstanceOf[util.Map[_, _]]
+    map.clear()
+
+    val f2 = loader.getClass.getSuperclass.getDeclaredField("classpathResources")
+    f2.setAccessible(true)
+    val res = f2.get(loader).asInstanceOf[ClasspathResources]
+    val f3: Field = res.getClass.getSuperclass.getDeclaredField("jarEntryContents")
+    f3.setAccessible(true)
+    map = f3.get(res).asInstanceOf[util.Map[String, Array[Byte]]]
+    map.clear()
+
+    System.gc()
+  }
 
   def getLoader: JarClassLoader = loader
 

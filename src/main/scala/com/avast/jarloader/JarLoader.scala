@@ -4,12 +4,13 @@ import java.io._
 import java.net.{JarURLConnection, URI, URL}
 import java.nio.file._
 import java.util
-import java.util.concurrent.Semaphore
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.{Executors, ScheduledFuture, Semaphore, TimeUnit}
 import java.util.jar.Attributes
-import java.util.{Comparator, Timer, TimerTask}
+import java.util.{Comparator, Timer}
 
 import com.avast.jmx.{JMXOperation, JMXProperty, MyDynamicBean}
+import com.google.common.util.concurrent.ThreadFactoryBuilder
 import org.slf4j.{Logger, LoggerFactory}
 import org.xeustechnologies.jcl.JclObjectFactory
 
@@ -42,7 +43,10 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
   protected val timer: Timer = new Timer("JAR loader timer")
 
-  var timerTask: TimerTask = _
+  protected val loader = new AtomicReference[InJarClassLoader]()
+  protected var newLoader: InJarClassLoader = null
+
+  var timerTask: ScheduledFuture[_] = _
 
   private val jmxName: String = this.getClass.getPackage.getName + ":type=JarLoader[%s]".format(if (name.isDefined) name.get else System.currentTimeMillis())
   MyDynamicBean.exposeAndRegisterSilently(jmxName, this)
@@ -73,10 +77,8 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
     stopSearching()
 
-    timerTask = new TimerTask {
-      def run() {
-        if (!loadingLock.tryAcquire()) return; //already loading something
-
+    timerTask = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder().setNameFormat("jarloadertimer-" + (if (name.isDefined) name.get else System.currentTimeMillis()) + "-%d").build()).scheduleAtFixedRate(new Runnable {
+      override def run(): Unit = {
         try {
           val files: Array[File] = rootDir.listFiles(new FilenameFilter {
             def accept(dir: File, name: String): Boolean = {
@@ -100,17 +102,24 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
           case e: Exception =>
             LOGGER.error("JAR loading failed", e)
         }
-
-        loadingLock.release()
       }
-    }
+    }, 0, interval, TimeUnit.MILLISECONDS)
 
-    timer.schedule(timerTask, 0, interval)
+    //thread checker
+    Executors.newSingleThreadScheduledExecutor().scheduleAtFixedRate(new Runnable {
+      override def run() = {
+        if (timerTask != null && timerTask.isDone) {
+          //should be running but is not
+          LOGGER.info("Loading thread probably died, restarting")
+          search(interval, prefix, suffix) //restart
+        }
+      }
+    }, 1, 1, TimeUnit.MINUTES)
   }
 
   @JMXOperation(description = "Stops searching for new implementations.")
   def stopSearching(): Unit = {
-    if (timerTask != null) timerTask.cancel()
+    if (timerTask != null) timerTask.cancel(false)
     timerTask = null
   }
 
@@ -120,8 +129,15 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
   @JMXOperation(description = "Tries to load new JAR with given name (without JAR extension).")
   def load(name: String): Boolean = {
+    if (!loadingLock.tryAcquire()) return false
+
     try {
-      val jarFile = new File(Utils.normalizePath(rootDir.getAbsolutePath + File.separator + name + ".jar"))
+      val path = if (!Paths.get(name).isAbsolute) {
+        rootDir.getAbsolutePath + File.separator + name
+      }
+      else name
+
+      val jarFile = new File(Utils.normalizePath(if (!path.endsWith(".jar")) path + ".jar" else path))
       LOGGER.debug("Trying to load '" + jarFile.getAbsolutePath + "' JAR")
       if (!jarFile.exists()) {
         LOGGER.warn("Cannot find requested JAR ({})!", jarFile.getAbsolutePath)
@@ -172,6 +188,13 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
       }
 
       loadedClass.set(Some(result.get._3, result.get._1))
+      val oldLoader = loader.getAndSet(newLoader)
+
+      if (oldLoader != null)
+        oldLoader.release()
+
+      newLoader = null //this reference is no longer needed
+
 
       LOGGER.info("Loaded class '" + result.get._3.getClass.getSimpleName + "', version " + result.get._1)
       history.add(System.currentTimeMillis() / 1000 + ";" + result.get._2 + ";" + result.get._1 + ";" + jarFile.getAbsolutePath)
@@ -188,6 +211,8 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
       case e: Throwable =>
         LOGGER.error("JAR loading failed", e)
         throw e
+    } finally {
+      loadingLock.release()
     }
   }
 
@@ -234,11 +259,9 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     val name: String = file.getName.toLowerCase
     val properties = loadProperties(jarFs.getPath("/" + name.substring(0, name.lastIndexOf(".")) + ".properties"))
 
-    val jcl = new InJarClassLoader(uc)
+    newLoader = new InJarClassLoader(uc)
 
-    val plugin = JclObjectFactory.getInstance().create(jcl.getLoader, className).asInstanceOf[T] //create instance
-
-    Some(version, className, plugin, jarFs, properties)
+    Some(version, className, JclObjectFactory.getInstance().create(newLoader.getLoader, className).asInstanceOf[T], jarFs, properties)
   }
 
   protected def loadProperties(path: Path): Option[util.Map[String, String]] = {
