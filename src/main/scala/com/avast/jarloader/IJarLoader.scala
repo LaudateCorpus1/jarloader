@@ -33,6 +33,12 @@ trait IJarLoader[T] {
 
   def acceptOnlyNewer(): Unit
 
+  def enableAutoSwitching(enable: Boolean): Unit
+
+  def isAutoSwitchingEnabled: Boolean
+
+  def confirmSwitch(): String
+
   def isSearching: Boolean
 
   def getLoadedVersion: String

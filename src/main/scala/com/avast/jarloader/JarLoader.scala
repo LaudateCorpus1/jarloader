@@ -2,12 +2,12 @@ package com.avast.jarloader
 
 import java.io._
 import java.net.{JarURLConnection, URI, URL}
-import java.nio.file._
+import java.nio.file.{FileSystem, _}
 import java.util
+import java.util.Comparator
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.{Executors, ScheduledFuture, Semaphore, TimeUnit}
 import java.util.jar.Attributes
-import java.util.{Comparator, Timer}
 
 import com.avast.jmx.{JMXOperation, JMXProperty, MyDynamicBean}
 import com.google.common.util.concurrent.ThreadFactoryBuilder
@@ -39,14 +39,21 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
   @JMXProperty
   protected def loadedVersion = if (loadedClass.get().isDefined) loadedClass.get.get._2 else 0.toString
 
+  @JMXProperty(setable = true)
   protected var acceptOnlyNewerVersions = true
 
-  protected val timer: Timer = new Timer("JAR loader timer")
+  @JMXProperty(setable = true)
+  protected var allowAutoSwitch = true
 
   protected val loader = new AtomicReference[InJarClassLoader]()
-  protected var newLoader: InJarClassLoader = null
 
-  var timerTask: ScheduledFuture[_] = _
+  protected var waitingLoader: InJarClassLoader = null
+  protected var waitingJarResult: (String, String, T, java.nio.file.FileSystem, Option[util.Map[String, String]]) = null
+
+  @JMXProperty()
+  protected var waitingJarFile: String = null
+
+  protected var timerTask: ScheduledFuture[_] = _
 
   private val jmxName: String = this.getClass.getPackage.getName + ":type=JarLoader[%s]".format(if (name.isDefined) name.get else System.currentTimeMillis())
   MyDynamicBean.exposeAndRegisterSilently(jmxName, this)
@@ -77,6 +84,8 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
     stopSearching()
 
+    LOGGER.info(s"Starts searching with interval $interval, prefix ${prefix.getOrElse("-")}, suffix ${suffix.getOrElse("-")}")
+
     timerTask = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder().setNameFormat("jarloadertimer-" + (if (name.isDefined) name.get else System.currentTimeMillis()) + "-%d").build()).scheduleAtFixedRate(new Runnable {
       override def run(): Unit = {
         try {
@@ -87,6 +96,11 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
           })
 
           if (files == null || files.length == 0) return
+
+          if (!allowAutoSwitch && waitingJarFile != null && waitingJarResult != null && waitingLoader != null) {
+            LOGGER.debug(s"JAR file $waitingJarFile with version ${waitingJarResult._1} is already waiting for switch")
+            return
+          }
 
           if (comparator.isDefined)
             util.Arrays.sort(files, comparator.get)
@@ -121,13 +135,14 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
   def stopSearching(): Unit = {
     if (timerTask != null) timerTask.cancel(false)
     timerTask = null
+    LOGGER.info("Stops searching")
   }
 
   def setComparator(comparator: Comparator[File]) = {
     this.comparator = if (comparator != null) Some(comparator) else None
   }
 
-  @JMXOperation(description = "Tries to load new JAR with given name (without JAR extension).")
+  @JMXOperation(description = "Tries to load new JAR with given name (without JAR extension). Can take a long time to execute.")
   def load(name: String): Boolean = {
     if (!loadingLock.tryAcquire()) return false
 
@@ -161,49 +176,17 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
         case e: Throwable => throw new RuntimeException("BeforeLoad annotated method has thrown an exception", e)
       }
 
-      try {
-        if (loadedClass.get.isDefined) {
-          val inst: T = loadedClass.get().get._1
+      waitingJarResult = result.get
+      waitingJarFile = jarFile.getAbsolutePath
 
-          inst.getClass.getDeclaredMethods.filter(m => {
-            m.isAnnotationPresent(classOf[BeforeUnload])
-          }).foreach(m => {
-            m.invoke(inst)
-          })
-        }
+      if (allowAutoSwitch) {
+        performSwitch()
+        true
       }
-      catch {
-        case e: Throwable => LOGGER.warn("BeforeUnload annotated method has thrown an exception", e)
+      else {
+        LOGGER.info("New JAR with version {} loaded, waiting for confirmation", result.get._1)
+        true
       }
-
-      var fileSystem: java.nio.file.FileSystem = null
-      try {
-        fileSystem = result.get._4
-        onLoad(result.get._3, result.get._1, result.get._2, fileSystem, if (result.get._5.isDefined) result.get._5.get else new util.HashMap[String, String]())
-      }
-      catch {
-        case e: Throwable => LOGGER.warn("Exception while doing onLoad callback", e)
-      } finally {
-        if (fileSystem != null) fileSystem.close()
-      }
-
-      loadedClass.set(Some(result.get._3, result.get._1))
-      val oldLoader = loader.getAndSet(newLoader)
-
-      if (oldLoader != null)
-        oldLoader.release()
-
-      newLoader = null //this reference is no longer needed
-
-
-      LOGGER.info("Loaded class '" + result.get._3.getClass.getSimpleName + "', version " + result.get._1)
-      history.add(System.currentTimeMillis() / 1000 + ";" + result.get._2 + ";" + result.get._1 + ";" + jarFile.getAbsolutePath)
-      //keep the memory clean
-      while (history.size() > 100) {
-        history.remove(0)
-      }
-
-      true
     } catch {
       case e: Exception =>
         LOGGER.warn("JAR loading failed", e)
@@ -214,6 +197,65 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     } finally {
       loadingLock.release()
     }
+  }
+
+  protected def performSwitch() = {
+    try {
+      if (loadedClass.get.isDefined) {
+        val inst: T = loadedClass.get().get._1
+
+        val executor = Executors.newFixedThreadPool(2)
+
+        inst.getClass.getDeclaredMethods.filter(m => {
+          m.isAnnotationPresent(classOf[BeforeUnload])
+        }).foreach(m => {
+          executor.submit(new Runnable {
+            override def run() = {
+              try {
+                m.invoke(inst)
+              }
+              catch {
+                case e: Throwable => LOGGER.warn(s"BeforeUnload annotated method ${m.getName} has thrown an exception", e)
+              }
+            }
+          })
+        })
+      }
+    }
+    catch {
+      case e: Throwable => LOGGER.warn("Execution of BeforeUnload method has failed", e)
+    }
+
+    var fileSystem: FileSystem = null
+    try {
+      fileSystem = waitingJarResult._4
+      onLoad(waitingJarResult._3, waitingJarResult._1, waitingJarResult._2, fileSystem, if (waitingJarResult._5.isDefined) waitingJarResult._5.get else new util.HashMap[String, String]())
+    }
+    catch {
+      case e: Throwable => LOGGER.warn("Exception while doing onLoad callback", e)
+    } finally {
+      if (fileSystem != null) fileSystem.close()
+    }
+
+    LOGGER.debug("Switching to new version")
+
+    loadedClass.set(Some(waitingJarResult._3, waitingJarResult._1))
+    val oldLoader = loader.getAndSet(waitingLoader)
+
+    LOGGER.info("Loaded class '" + waitingJarResult._3.getClass.getSimpleName + "', version " + waitingJarResult._1)
+    history.add(System.currentTimeMillis() / 1000 + ";" + waitingJarResult._2 + ";" + waitingJarResult._1 + ";" + waitingJarFile)
+    //keep the memory clean
+    while (history.size() > 100) {
+      history.remove(0)
+    }
+
+    if (oldLoader != null)
+      oldLoader.release()
+
+    //these references are no longer needed
+    waitingLoader = null
+    waitingJarFile = null
+    waitingJarResult = null
   }
 
   protected def checkJar(file: File): Option[(String, String, T, java.nio.file.FileSystem, Option[util.Map[String, String]])] = {
@@ -259,9 +301,9 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     val name: String = file.getName.toLowerCase
     val properties = loadProperties(jarFs.getPath("/" + name.substring(0, name.lastIndexOf(".")) + ".properties"))
 
-    newLoader = new InJarClassLoader(uc)
+    waitingLoader = new InJarClassLoader(uc)
 
-    Some(version, className, JclObjectFactory.getInstance().create(newLoader.getLoader, className).asInstanceOf[T], jarFs, properties)
+    Some(version, className, JclObjectFactory.getInstance().create(waitingLoader.getLoader, className).asInstanceOf[T], jarFs, properties)
   }
 
   protected def loadProperties(path: Path): Option[util.Map[String, String]] = {
@@ -300,6 +342,28 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
   def acceptOnlyNewer() {
     acceptOnlyNewer(accept = true)
   }
+
+
+  def enableAutoSwitching(enable: Boolean) = {
+    allowAutoSwitch = enable
+  }
+
+  @JMXOperation
+  def confirmSwitch(): String = {
+    if (allowAutoSwitch) throw new IllegalStateException("AutoSwitch is enabled")
+
+    if (waitingLoader == null || waitingJarFile == null || waitingJarResult == null) return ""
+
+    try {
+      performSwitch()
+      loadedVersion
+    }
+    catch {
+      case e: Exception => throw new RuntimeException(s"JAR $waitingJarFile could not be loaded because of error", e)
+    }
+  }
+
+  def isAutoSwitchingEnabled: Boolean = allowAutoSwitch
 
   def getLoadedVersion: String = loadedVersion
 

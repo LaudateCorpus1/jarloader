@@ -61,6 +61,25 @@ trait AbstractJarLoader[T] {
   def acceptOnlyNewer()
 
   /**
+   * Tells the loader to enable/disable automatic switching, when new version of JAR is loaded and ready.
+   * @param enable TRUE to enable
+   */
+  def enableAutoSwitching(enable: Boolean): Unit
+
+  /**
+   * Determines whether the auto switching is enabled.
+   * @return
+   * @see enableAutoSwitching
+   */
+  def isAutoSwitchingEnabled: Boolean
+
+  /**
+   * Confirms switch of waiting (already loaded JAR).
+   * @return Loaded version.
+   */
+  def confirmSwitch(): String
+
+  /**
    * Determines whether this loader is currently searching for new JARs.
    * @return TRUE if the loader is searching.
    */
