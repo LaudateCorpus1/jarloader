@@ -84,7 +84,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
     stopSearching()
 
-    LOGGER.info(s"Starts searching with interval $interval, prefix ${prefix.getOrElse("-")}, suffix ${suffix.getOrElse("-")}")
+    LOGGER.info("Starts searching with interval %d, prefix %s}, suffix %s".format(interval, prefix.getOrElse("-"), suffix.getOrElse("-")))
 
     timerTask = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder().setNameFormat("jarloadertimer-" + (if (name.isDefined) name.get else System.currentTimeMillis()) + "-%d").build()).scheduleAtFixedRate(new Runnable {
       override def run(): Unit = {
@@ -98,7 +98,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
           if (files == null || files.length == 0) return
 
           if (!allowAutoSwitch && waitingJarFile != null && waitingJarResult != null && waitingLoader != null) {
-            LOGGER.debug(s"JAR file $waitingJarFile with version ${waitingJarResult._1} is already waiting for switch")
+            LOGGER.debug("JAR file %s with version %s is already waiting for switch".format(waitingJarFile, waitingJarResult._1))
             return
           }
 
@@ -215,7 +215,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
                 m.invoke(inst)
               }
               catch {
-                case e: Throwable => LOGGER.warn(s"BeforeUnload annotated method ${m.getName} has thrown an exception", e)
+                case e: Throwable => LOGGER.warn("BeforeUnload annotated method " + m.getName + " has thrown an exception", e)
               }
             }
           })
@@ -359,7 +359,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
       loadedVersion
     }
     catch {
-      case e: Exception => throw new RuntimeException(s"JAR $waitingJarFile could not be loaded because of error", e)
+      case e: Exception => throw new RuntimeException("JAR " + waitingJarFile + " could not be loaded because of error", e)
     }
   }
 
