@@ -16,7 +16,12 @@ import org.xeustechnologies.jcl.JclObjectFactory
 
 /**
  * Created <b>1.11.13</b><br>
- * See <a href="https://intranet.int.avast.com/wiki/ff/projects/jar-loader/wiki">wiki</a> for docs.
+ * See <a href="https://github.com/avast/jarloader">project page</a> for introduction.
+ *
+ * @param name Name of this loader.
+ * @param rootDir Root directory where JAR will be searched.
+ * @param minVersion Minimal version of class which will be loaded.
+ * @param maxVersion Maximal version of class which will be loaded.
  *
  * @author Jenda Kolena, kolena@avast.com
  */
@@ -62,20 +67,9 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
    * Constructor (prepared for Java users).
    * @param name Name of this loader.
    * @param rootDir Root directory where JAR will be searched.
-   * @param minVersion Minimal version of class which will be loaded.
-   * @param maxVersion Maximal version of class which will be loaded.
-   */
-  def this(name: String, rootDir: File, minVersion: java.lang.Integer, maxVersion: java.lang.Integer = -1.asInstanceOf[java.lang.Integer]) = {
-    this(if (!"".equals(name)) Some(name) else None, rootDir, if (minVersion.compareTo(-1.asInstanceOf[java.lang.Integer]) > 1) Some(minVersion.toString) else None, if (maxVersion.compareTo(-1.asInstanceOf[java.lang.Integer]) > 1) Some(maxVersion.toString) else None)
-  }
-
-  /**
-   * Constructor (prepared for Java users).
-   * @param name Name of this loader.
-   * @param rootDir Root directory where JAR will be searched.
    */
   def this(name: String, rootDir: File) = {
-    this(name, rootDir, -1, -1)
+    this(Some(name), rootDir, None)
   }
 
   def search(interval: Int, prefix: Option[String] = None, suffix: Option[String] = None): Unit = {
