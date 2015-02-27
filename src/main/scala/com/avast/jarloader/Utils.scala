@@ -50,26 +50,16 @@ object Utils {
     }
   }
 
-  protected val versionComparator = new AlphaComparator
+  protected val versionComparator = new VersionComparator
 
-  def compareVersions(oldVersion: String, newVersion: String): Int = {
-
-    //    val oldParts = oldVersion.split("\\.")
-    //    val newParts = newVersion.split("\\.")
-    //
-    //    val partsCount = math.min(oldParts.length, newParts.length)
-    //
-    //    for (i <- 0 to partsCount - 1) {
-    //      val c = oldParts(i).compareTo(newParts(i))
-    //      if (c != 0) return c
-    //    }
-    //
-    //    if (oldParts.length > newParts.length)1
-    //    else if (oldParts.length < newParts.length) -1
-    //    else
-    //      0 //equals
-
-    versionComparator.compare(oldVersion, newVersion) * -1
+  /**
+   * Compares two versions.
+   * @param oldVersion The old version.
+   * @param newVersion The new version.
+   * @return TRUE if newVersion is really newer.
+   */
+  def isNewerVersion(oldVersion: String, newVersion: String): Boolean = {
+    versionComparator.compare(oldVersion, newVersion) == -1
   }
 }
 

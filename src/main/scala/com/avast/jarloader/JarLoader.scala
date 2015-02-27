@@ -263,18 +263,18 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
     val attr = uc.getMainAttributes
 
     val className = attr.getValue(Attributes.Name.MAIN_CLASS)
-    val version = attr.getValue(Attributes.Name.IMPLEMENTATION_VERSION)
+    val newVersion = attr.getValue(Attributes.Name.IMPLEMENTATION_VERSION)
 
-    if (Utils.compareVersions(loadedVersion, version) >= 0 && acceptOnlyNewerVersions) {
-      LOGGER.debug("Too old version: %s (loaded: %s, required newer)".format(version, loadedVersion))
+    if (!Utils.isNewerVersion(loadedVersion, newVersion) && acceptOnlyNewerVersions) {
+      LOGGER.debug("Too old version: %s (loaded: %s, required newer)".format(newVersion, loadedVersion))
       return None
     }
-    if (minVersion.isDefined && Utils.compareVersions(minVersion.get, version) < 0) {
-      LOGGER.debug("Too small version: %s (required: %s)".format(version, minVersion.get))
+    if (minVersion.isDefined && !Utils.isNewerVersion(minVersion.get, newVersion)) {
+      LOGGER.debug("Too small version: %s (required: %s)".format(newVersion, minVersion.get))
       return None
     }
-    if (maxVersion.isDefined && Utils.compareVersions(maxVersion.get, version) < 0) {
-      LOGGER.debug("Too big version: %s (required: %s)".format(version, maxVersion.get))
+    if (maxVersion.isDefined && Utils.isNewerVersion(maxVersion.get, newVersion)) {
+      LOGGER.debug("Too big version: %s (required: %s)".format(newVersion, maxVersion.get))
       return None
     }
 
@@ -297,7 +297,7 @@ abstract class JarLoader[T](val name: Option[String], val rootDir: File, minVers
 
     waitingLoader = new InJarClassLoader(uc)
 
-    Some(version, className, JclObjectFactory.getInstance().create(waitingLoader.getLoader, className).asInstanceOf[T], jarFs, properties)
+    Some(newVersion, className, JclObjectFactory.getInstance().create(waitingLoader.getLoader, className).asInstanceOf[T], jarFs, properties)
   }
 
   protected def loadProperties(path: Path): Option[util.Map[String, String]] = {
